@@ -86,6 +86,7 @@ class EVCInterface:
             CANbus data transfer rate, default 500000 for PRE EVC
         """
         self._node_id = node_id
+        self._verbose = self.EVC_INTERFACE_VERBOSE_OUTPUT
         self._bus = can.interface.Bus(
             channel=channel,
             bustype=self.EVC_VECTOR_BUS_TYPE,
@@ -117,15 +118,18 @@ class EVCInterface:
         """
         try:
             self._bus.send(request, timeout=0.5)
-            if self.EVC_INTERFACE_VERBOSE_OUTPUT or verbose:
+            if self._verbose or verbose:
                 print(request)
             response = self._bus.recv(timeout=1.0)
-            if self.EVC_INTERFACE_VERBOSE_OUTPUT or verbose:
+            if self._verbose or verbose:
                 print(response)
             return response
         except can.CanError as e:
             print(f'CANbus communication failure', e)
         return None
+
+    def set_verbose(self, verbose: bool) -> object:
+        self._verbose = verbose
 
     # ----------------------------------------------------------------------------------------------------
     # 2100 MODULE ENABLE (R/W)
@@ -139,7 +143,6 @@ class EVCInterface:
             data=[self.MASTER_READS_FROM_SLAVE] + self.MODULE_ENABLE +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        # DIT FORMAT GAAN AANHOUDEN
         return int.from_bytes(self._query(read_module_enabled).data[4:6], byteorder='little', signed=True) > 0
 
     def enable_module(self, enabled=True) -> bool:

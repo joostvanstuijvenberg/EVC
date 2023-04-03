@@ -4,6 +4,7 @@ NODE_ID_PRE = 0x30
 
 if __name__ == '__main__':
     evc = EVCInterface(NODE_ID_PRE)
+    evc.set_verbose(True)
     # evc.enable_module(True)
     print(f'Module enabled . . . . . . . : ', evc.is_module_enabled())
     print(f'Ambient temperature. . . . . : ', evc.get_ambient_temperature())
