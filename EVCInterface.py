@@ -75,6 +75,20 @@ class EVCInterface:
     TEMPERATURE_TRANSFORMER = [0x39, 0x21]
     TEMPERATURE_AC_HEATSINK = [0x40, 0x21]
 
+    # Module status masks (0x2101)
+    MODULE_STATUS_CHARGER_ON =                   0b0000000000000001
+    MODULE_STATUS_POWER_ERROR =                  0b0000000000000010
+    MODULE_STATUS_INPUT_OVERVOLTAGE_DETECTED =   0b0000000000000100
+    MODULE_STATUS_INPUT_UNDERVOLTAGE_DETECTED =  0b0000000000001000
+    MODULE_STATUS_OUTPUT_OVERVOLTAGE_DETECTED =  0b0000000000010000
+    MODULE_STATUS_OUTPUT_UNDERVOLTAGE_DETECTED = 0b0000000000100000
+    MODULE_STATUS_OVERTEMPERATURE_DETECTED =     0b0000000010000000
+    MODULE_STATUS_UAUX_ERROR =                   0b0000000100000000
+    MODULE_STATUS_CHARGE_OR_V2G =                0b0000001000000000
+    MODULE_STATUS_GRID_ERROR =                   0b0000010000000000
+    MODULE_STATUS_HW_INTERLOCK_ERROR =           0b0000100000000000
+    MODULE_STATUS_SERVICE_MODE =                 0b0001000000000000
+
 
     def __init__(self, node_id=EVC_DEFAULT_NODE_ID, channel=EVC_DEFAULT_CHANNEL, bitrate=EVC_DEFAULT_BITRATE):
         """
@@ -128,7 +142,7 @@ class EVCInterface:
             print(f'CANbus communication failure', e)
         return None
 
-    def set_verbose(self, verbose: bool) -> object:
+    def set_verbose(self, verbose: bool):
         self._verbose = verbose
 
     # ----------------------------------------------------------------------------------------------------
@@ -151,12 +165,9 @@ class EVCInterface:
         :param enabled: requested enabled/disabled status
         :return: result (see: is_module_enabled())
         """
-        write_module_enabled = can.Message(
-            arbitration_id=self._arbitration_id(),
-            dlc=self.DATA_FRAME_DLC,
-            data=[self.MASTER_READS_FROM_SLAVE] + self.MODULE_ENABLE +
-                 [self.DATA_FRAME_NO_SUB_INDEX, 0xF0, 0x00, 0x00, 0x00],
-            is_extended_id=False
+        write_module_enabled = self._canopen_message(
+            data=[self.MASTER_WRITES_TO_SLAVE_2_BYTES] + self.MODULE_ENABLE +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x01, 0x00, 0x00, 0x00]
         )
         return int.from_bytes(self._query(write_module_enabled).data[4:6], byteorder='little', signed=True) > 0
 
@@ -166,16 +177,41 @@ class EVCInterface:
     def get_ac_input_l1_voltage(self) -> float:
         """
         Returns the measured L1 AC input voltage (line-neutral).
-        :return: L1 AC input voltage
+        :return: L1 AC input voltage in volts
         """
-        read_ac_input_l1_voltage = can.Message(
-            arbitration_id=self._arbitration_id(),
-            dlc=self.DATA_FRAME_DLC,
+        read_ac_input_l1_voltage = self._canopen_message(
             data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L1 +
-                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00],
-            is_extended_id=False
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
         return int.from_bytes(self._query(read_ac_input_l1_voltage).data[4:6], byteorder='little', signed=True) / 10
+
+    # ----------------------------------------------------------------------------------------------------
+    # 2121 VOLTAGE AC INPUT L2 (R)
+    # ----------------------------------------------------------------------------------------------------
+    def get_ac_input_l2_voltage(self) -> float:
+        """
+        Returns the measured L2 AC input voltage (line-neutral).
+        :return: L2 AC input voltage in volts
+        """
+        read_ac_input_l2_voltage = self._canopen_message(
+            data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L2 +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
+        )
+        return int.from_bytes(self._query(read_ac_input_l2_voltage).data[4:6], byteorder='little', signed=True) / 10
+
+    # ----------------------------------------------------------------------------------------------------
+    # 2121 VOLTAGE AC INPUT L3 (R)
+    # ----------------------------------------------------------------------------------------------------
+    def get_ac_input_l3_voltage(self) -> float:
+        """
+        Returns the measured L3 AC input voltage (line-neutral).
+        :return: L3 AC input voltage in volts
+        """
+        read_ac_input_l3_voltage = self._canopen_message(
+            data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L3 +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
+        )
+        return int.from_bytes(self._query(read_ac_input_l3_voltage).data[4:6], byteorder='little', signed=True) / 10
 
     # ----------------------------------------------------------------------------------------------------
     # 2136 TEMPERATURE_AMBIENT (R)
@@ -184,13 +220,10 @@ class EVCInterface:
         """
         Returns the ‘ambient’ temperature, where the sensor is fitted on the PCB (not near local
         heat sources). Measured in steps of 0.1 °C
-        :return: ambient temperature
+        :return: ambient temperature in tenth degrees Celsius
         """
-        read_ambient_temperature = can.Message(
-            arbitration_id=self._arbitration_id(),
-            dlc=self.DATA_FRAME_DLC,
+        read_ambient_temperature = self._canopen_message(
             data=[self.MASTER_READS_FROM_SLAVE] + self.TEMPERATURE_AMBIENT +
-                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00],
-            is_extended_id=False
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
         return int.from_bytes(self._query(read_ambient_temperature).data[4:6], byteorder='little', signed=True) / 10
