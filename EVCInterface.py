@@ -76,19 +76,18 @@ class EVCInterface:
     TEMPERATURE_AC_HEATSINK = [0x40, 0x21]
 
     # Module status masks (0x2101)
-    MODULE_STATUS_CHARGER_ON =                   0b0000000000000001
-    MODULE_STATUS_POWER_ERROR =                  0b0000000000000010
-    MODULE_STATUS_INPUT_OVERVOLTAGE_DETECTED =   0b0000000000000100
-    MODULE_STATUS_INPUT_UNDERVOLTAGE_DETECTED =  0b0000000000001000
-    MODULE_STATUS_OUTPUT_OVERVOLTAGE_DETECTED =  0b0000000000010000
-    MODULE_STATUS_OUTPUT_UNDERVOLTAGE_DETECTED = 0b0000000000100000
-    MODULE_STATUS_OVERTEMPERATURE_DETECTED =     0b0000000010000000
-    MODULE_STATUS_UAUX_ERROR =                   0b0000000100000000
-    MODULE_STATUS_CHARGE_OR_V2G =                0b0000001000000000
-    MODULE_STATUS_GRID_ERROR =                   0b0000010000000000
-    MODULE_STATUS_HW_INTERLOCK_ERROR =           0b0000100000000000
-    MODULE_STATUS_SERVICE_MODE =                 0b0001000000000000
-
+    MODULE_STATUS_CHARGER_ON = 0b0000000000000001
+    MODULE_STATUS_POWER_ERROR = 0b0000000000000010
+    MODULE_STATUS_INPUT_OVERVOLTAGE = 0b0000000000000100
+    MODULE_STATUS_INPUT_UNDERVOLTAGE = 0b0000000000001000
+    MODULE_STATUS_OUTPUT_OVERVOLTAGE = 0b0000000000010000
+    MODULE_STATUS_OUTPUT_UNDERVOLTAGE = 0b0000000000100000
+    MODULE_STATUS_OVERTEMPERATURE = 0b0000000010000000
+    MODULE_STATUS_UAUX_ERROR = 0b0000000100000000
+    MODULE_STATUS_CHARGE_OR_V2G = 0b0000001000000000
+    MODULE_STATUS_GRID_ERROR = 0b0000010000000000
+    MODULE_STATUS_HW_INTERLOCK_ERROR = 0b0000100000000000
+    MODULE_STATUS_SERVICE_MODE = 0b0001000000000000
 
     def __init__(self, node_id=EVC_DEFAULT_NODE_ID, channel=EVC_DEFAULT_CHANNEL, bitrate=EVC_DEFAULT_BITRATE):
         """
@@ -116,6 +115,11 @@ class EVCInterface:
         return 0x0600 + self._node_id
 
     def _canopen_message(self, data):
+        """
+        Composes a CANopen message with most of the fields filled with application defaults.
+        :param data: payload
+        :return: CANopen message for this application
+        """
         return can.Message(
             arbitration_id=self._arbitration_id(),
             dlc=self.DATA_FRAME_DLC,
@@ -142,6 +146,20 @@ class EVCInterface:
             print(f'CANbus communication failure', e)
         return None
 
+    @classmethod
+    def _decode_response(cls, response: can.Message) -> int | None:
+        if response.data[0:1] == 0x40:
+            return int.from_bytes(response.data[4:8], byteorder='little', signed=True)
+        if response.data[0:1] == 0x47:
+            return int.from_bytes(response.data[4:7], byteorder='little', signed=True)
+        if response.data[0:1] == 0x4B:
+            return int.from_bytes(response.data[4:6], byteorder='little', signed=True)
+        if response.data[0:1] == 0x4F:
+            return int.from_bytes(response.data[4:5], signed=True)
+        if response.data[0:1] == 0x60:
+            return 0
+        return None
+
     def set_verbose(self, verbose: bool):
         self._verbose = verbose
 
@@ -157,7 +175,7 @@ class EVCInterface:
             data=[self.MASTER_READS_FROM_SLAVE] + self.MODULE_ENABLE +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(read_module_enabled).data[4:6], byteorder='little', signed=True) > 0
+        return self._decode_response(self._query(read_module_enabled)) > 0
 
     def enable_module(self, enabled=True) -> bool:
         """
@@ -169,7 +187,75 @@ class EVCInterface:
             data=[self.MASTER_WRITES_TO_SLAVE_2_BYTES] + self.MODULE_ENABLE +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x01, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(write_module_enabled).data[4:6], byteorder='little', signed=True) > 0
+        return self._decode_response(self._query(write_module_enabled)) > 0
+
+    # ----------------------------------------------------------------------------------------------------
+    # 2101 MODULE STATUS (R)
+    # ----------------------------------------------------------------------------------------------------
+    def get_module_status(self):
+        """
+        Return a collection of all status flags
+        :return: status flags
+        """
+        read_module_status = self._canopen_message(
+            data=[self.MASTER_READS_FROM_SLAVE] + self.MODULE_STATUS +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
+        )
+        return self._decode_response(self._query(read_module_status)) > 0
+
+    # ----------------------------------------------------------------------------------------------------
+    # 2109 DC OUTPUT VOLTAGE SETPOINT (R/W)
+    # ----------------------------------------------------------------------------------------------------
+    def get_dc_output_voltage_setpoint(self) -> float | None:
+        """
+        Returns the DC output voltage setpoint.
+        :return: DC output voltage setpoint in volts
+        """
+        read_dc_output_voltage_setpoint = self._canopen_message(
+            data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_DC_OUTPUT_SETPOINT +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
+        )
+        return float(self._decode_response(self._query(read_dc_output_voltage_setpoint)) / 10)
+
+    def set_dc_output_voltage_setpoint(self, voltage: float):
+        """
+        Sets the DC output voltage setpoint.
+        :return: result (see get_udc_output_setpoint())
+        """
+        output_voltage: int = int(voltage * 10)
+        write_dc_output_voltage_setpoint = self._canopen_message(
+            data=[self.MASTER_WRITES_TO_SLAVE_2_BYTES] + self.VOLTAGE_DC_OUTPUT_SETPOINT +
+                 [self.DATA_FRAME_NO_SUB_INDEX] + list(output_voltage.to_bytes(2, "little", signed=False)) + [0x00,
+                                                                                                              0x00]
+        )
+        return float(self._decode_response(self._query(write_dc_output_voltage_setpoint)) / 10)
+
+    # ----------------------------------------------------------------------------------------------------
+    # 2109 DC OUTPUT CURRENT SETPOINT (R/W)
+    # ----------------------------------------------------------------------------------------------------
+    def get_dc_output_current_setpoint(self) -> float | None:
+        """
+        Returns the DC output current setpoint.
+        :return: DC output current setpoint in amperes
+        """
+        read_dc_output_current_setpoint = self._canopen_message(
+            data=[self.MASTER_READS_FROM_SLAVE] + self.CURRENT_DC_OUTPUT_SETPOINT +
+                 [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
+        )
+        return float(self._decode_response(self._query(read_dc_output_current_setpoint)) / 10)
+
+    def set_dc_output_current_setpoint(self, current: float):
+        """
+        Sets the DC output current setpoint.
+        :return: result (see get_dc_output_current_setpoint())
+        """
+        output_current: int = int(current * 10)
+        write_dc_output_voltage_setpoint = self._canopen_message(
+            data=[self.MASTER_WRITES_TO_SLAVE_2_BYTES] + self.CURRENT_DC_OUTPUT_SETPOINT +
+                 [self.DATA_FRAME_NO_SUB_INDEX] + list(output_current.to_bytes(2, "little", signed=False)) + [0x00,
+                                                                                                              0x00]
+        )
+        return float(self._decode_response(self._query(write_dc_output_voltage_setpoint)) / 10)
 
     # ----------------------------------------------------------------------------------------------------
     # 2121 VOLTAGE AC INPUT L1 (R)
@@ -183,7 +269,7 @@ class EVCInterface:
             data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L1 +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(read_ac_input_l1_voltage).data[4:6], byteorder='little', signed=True) / 10
+        return float(self._decode_response(self._query(read_ac_input_l1_voltage)) / 10)
 
     # ----------------------------------------------------------------------------------------------------
     # 2121 VOLTAGE AC INPUT L2 (R)
@@ -197,7 +283,7 @@ class EVCInterface:
             data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L2 +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(read_ac_input_l2_voltage).data[4:6], byteorder='little', signed=True) / 10
+        return float(self._decode_response(self._query(read_ac_input_l2_voltage)) / 10)
 
     # ----------------------------------------------------------------------------------------------------
     # 2121 VOLTAGE AC INPUT L3 (R)
@@ -211,7 +297,7 @@ class EVCInterface:
             data=[self.MASTER_READS_FROM_SLAVE] + self.VOLTAGE_AC_INPUT_L3 +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(read_ac_input_l3_voltage).data[4:6], byteorder='little', signed=True) / 10
+        return float(self._decode_response(self._query(read_ac_input_l3_voltage)) / 10)
 
     # ----------------------------------------------------------------------------------------------------
     # 2136 TEMPERATURE_AMBIENT (R)
@@ -220,10 +306,10 @@ class EVCInterface:
         """
         Returns the ‘ambient’ temperature, where the sensor is fitted on the PCB (not near local
         heat sources). Measured in steps of 0.1 °C
-        :return: ambient temperature in tenth degrees Celsius
+        :return: ambient temperature in degrees Celsius
         """
         read_ambient_temperature = self._canopen_message(
             data=[self.MASTER_READS_FROM_SLAVE] + self.TEMPERATURE_AMBIENT +
                  [self.DATA_FRAME_NO_SUB_INDEX, 0x00, 0x00, 0x00, 0x00]
         )
-        return int.from_bytes(self._query(read_ambient_temperature).data[4:6], byteorder='little', signed=True) / 10
+        return float(self._decode_response(self._query(read_ambient_temperature)) / 10)
