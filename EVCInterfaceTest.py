@@ -6,9 +6,9 @@ if __name__ == '__main__':
     evc = EVCInterface(NODE_ID_PRE)
     evc.set_verbose(False)
 
-    # 0x2100 Module enable
+    # 0x2100 Module enable - APPEARS TO BE A WRITE-ONLY OBJECT???
     evc.enable_module(True)
-    # print(f'Module enabled. . . . . . . . . . : ', evc.is_module_enabled())  # 2100 IS WRITE-ONLY OBJECT??
+    # print(f'Module enabled. . . . . . . . . . : ', evc.is_module_enabled())
 
     # 0x2101 Module status
     status = evc.get_module_status()
@@ -31,12 +31,12 @@ if __name__ == '__main__':
     print(f'DC output voltage setpoint. . . . . : ', evc.get_dc_output_voltage_setpoint())
 
     # 0x210A IDC output setpoint
-    # evc.set_dc_output_current_setpoint(4.5)
-    # print(f'DC output current setpoint. . . . . : ', evc.get_dc_output_current_setpoint())
+    evc.set_dc_output_current_setpoint(4.5)
+    print(f'DC output current setpoint. . . . . : ', evc.get_dc_output_current_setpoint())
 
     # 0x210F UDC undervoltage setpoint- <--
-    # evc.set_output_undervoltage_setpoint(44.5)
-    # print(f'DC output undervoltage setpoint . . . : ', evc.get_udc_output_setpoint())
+    evc.set_output_undervoltage_setpoint(44.5)
+    print(f'DC output undervoltage setpoint . . . : ', evc.get_udc_output_setpoint())
 
     # 0x2121 - 0x2123 UAC input L1/L2/L3
     print(f'Input L1 AC voltage . . . . . . . : ', evc.get_ac_input_l1_voltage())
